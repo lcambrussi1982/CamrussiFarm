@@ -1,25 +1,113 @@
+// Cambrussi Farm — Main bootstrap
+// Liga início de jogo, salvar/carregar e ações de colheita/modais.
 
 (function(){
-  const CF=window.CF, st=CF.state;
-  function bindBasics(){
-    document.querySelectorAll('.tool').forEach(b=>{
-      b.addEventListener('click',()=>{ document.querySelectorAll('.tool').forEach(x=>x.classList.remove('active')); b.classList.add('active'); st.selectedTool=b.dataset.tool; document.getElementById('plantPalette').classList.toggle('hidden', st.selectedTool!=='plant'); },{passive:true});
-    });
-    document.getElementById('field').addEventListener('click',(e)=>{ const div=e.target.closest('.tile'); if(!div) return; const i=parseInt(div.dataset.i||'-1',10); if(isNaN(i)) return; CF.applyTool(i); });
-    document.getElementById('sellNow').addEventListener('click',CF.harvestSell,{passive:true});
-    document.getElementById('storeNow').addEventListener('click',CF.harvestStore,{passive:true});
-    document.getElementById('btnSave').addEventListener('click',()=> CF.saveSlot(st.playerName),{passive:true});
-    document.getElementById('btnLoad2').addEventListener('click',openLoadList,{passive:true});
-    document.querySelectorAll('[data-close]').forEach(b=> b.addEventListener('click',()=> document.getElementById(b.dataset.close).classList.add('hidden'),{passive:true}));
-    document.getElementById('modalBack').addEventListener('click',()=> Router.close(),{passive:true});
-    document.querySelectorAll('.navbtn[data-open]').forEach(b=> b.addEventListener('click',()=> Router.open(b.dataset.open),{passive:true}));
-    window.addEventListener('beforeunload',(e)=>{ if(st.dirty){ e.preventDefault(); e.returnValue='Alterações não salvas. Sair mesmo assim?'; return e.returnValue; } });
+  const CF = ()=> window.CF || {};
+
+  function byId(id){ return document.getElementById(id); }
+
+  function startNewGame(){
+    const name = (byId('playerName')?.value || 'Fazendeiro').trim();
+    const diff = (document.querySelector('input[name="diff"]:checked')?.value) || 'easy';
+    const speed = (byId('speedSel')?.value) || 'medium';
+
+    if (CF().newGame){
+      CF().newGame({ name, difficulty: diff, speed });
+    } else {
+      // fallback mínimo: só troca telas se por algum motivo newGame não estiver disponível
+      byId('splash')?.classList.add('hidden');
+      byId('app')?.classList.remove('hidden');
+      // cria estado mínimo se necessário
+      window.CF.state = window.CF.state || {
+        playerName: name, difficulty: diff, speed,
+        money: 300, debt: 0, creditLimit: 0,
+        hour: 6, minute: 0, day: 1, month: 0, year: 1,
+        weather: 'clear', forecast: 'clear',
+        tiles: [], owned: {}, storage: {}, prices: {},
+        inventory: {}, seedStock: {}, ledger: []
+      };
+    }
+
+    // Atualiza HUD
+    if (CF().render) CF().render();
   }
-  function startGameUI(){
-    document.getElementById('splash').classList.add('hidden'); document.getElementById('app').classList.remove('hidden');
-    CF.initEls(); CF.buildPlantPalette(); CF.render(); if(st.timer) clearInterval(st.timer); st.timer=setInterval(CF.tick, Math.max(1500, st.dayLenSec*1000/100));
+
+  function openLoad(){
+    // Preenche lista de saves se houver API; senão apenas abre modal
+    const list = byId('saveList');
+    if(list){ list.innerHTML = ''; }
+    if (CF().listSaves && list){
+      const saves = CF().listSaves();
+      if(!saves || !saves.length){
+        list.innerHTML = '<p class="muted">Sem jogos salvos.</p>';
+      } else {
+        list.innerHTML = saves.map(s=>`
+          <div class="row">
+            <div><b>${s.name}</b> • ${s.date}</div>
+            <div>
+              <button class="btn" data-load="${s.name}">Carregar</button>
+              <button class="btn ghost" data-del="${s.name}">Apagar</button>
+            </div>
+          </div>`).join('');
+        list.addEventListener('click', (e)=>{
+          const bLoad = e.target.closest('[data-load]');
+          const bDel  = e.target.closest('[data-del]');
+          if(bLoad){ CF().loadSlot && CF().loadSlot(bLoad.getAttribute('data-load')); CF().closeModal('loadModal'); }
+          if(bDel){  CF().deleteSlot && CF().deleteSlot(bDel.getAttribute('data-del')); openLoad(); }
+        }, {passive:true});
+      }
+    }
+    CF().openModal && CF().openModal('loadModal');
   }
-  function newGame(){ const name=(document.getElementById('playerName').value||'').trim()||'Jogador'; const diff=(document.querySelector('input[name="diff"]:checked')||{}).value||'normal'; const speed=document.getElementById('speedSel').value||'medium'; CF.newGame(name,diff,speed); startGameUI(); }
-  function openLoadList(){ const list=CF.listSaves(); const div=document.getElementById('saveList'); if(list.length===0){ div.innerHTML='<p class="muted">Nenhum jogo salvo.</p>'; } else { div.innerHTML=list.map(n=>`<div class="row"><span>${n}</span><button class="btn" data-load="${n}">Carregar</button></div>`).join(''); div.querySelectorAll('[data-load]').forEach(b=> b.addEventListener('click',()=>{ if(CF.loadByName(b.dataset.load)){ startGameUI(); CF.flash('Jogo carregado: '+b.dataset.load); document.getElementById('loadModal').classList.add('hidden'); } },{passive:true})); } document.getElementById('loadModal').classList.remove('hidden'); }
-  window.addEventListener('DOMContentLoaded',()=>{ document.getElementById('btnNew').addEventListener('click',()=>{ newGame(); bindBasics(); }); document.getElementById('btnLoad').addEventListener('click',openLoadList); });
+
+  function bindGlobal(){
+    // Splash: Novo / Carregar
+    byId('btnNew')?.addEventListener('click', startNewGame, {passive:true});
+    byId('btnLoad')?.addEventListener('click', openLoad, {passive:true});
+
+    // Barra: Salvar / Carregar
+    byId('btnSave')?.addEventListener('click', ()=>{
+      const st = CF().state;
+      if(CF().saveSlot && st){ CF().saveSlot(st.playerName || 'auto'); CF().flash && CF().flash('Jogo salvo.'); }
+    }, {passive:true});
+    byId('btnLoad2')?.addEventListener('click', openLoad, {passive:true});
+
+    // Colheita: vender / armazenar
+    byId('sellNow')?.addEventListener('click', ()=> CF().harvestSell && CF().harvestSell(), {passive:true});
+    byId('storeNow')?.addEventListener('click', ()=> CF().harvestStore && CF().harvestStore(), {passive:true});
+
+    // Fechar modal de colheita por X (atributo data-close já está no HTML; router cuida)
+  }
+
+  // Arranque do relógio quando o jogo começar (se state existir)
+  function ensureClock(){
+    if(!CF().tick) return;
+    // Evita mais de um intervalo
+    if (window.__cf_clock) clearInterval(window.__cf_clock);
+    const st = CF().state || {};
+    const speeds = CF().SPEEDS || { medium: 30 };
+    const ms = (speeds[st.speed] || speeds.medium) * 1000;
+
+    window.__cf_clock = setInterval(()=> CF().tick && CF().tick(), ms);
+  }
+
+  // Quando o jogo inicializa (após state.js configurar), chamamos render e o relógio
+  function waitForStateAndInit(){
+    const ready = !!(CF().state && CF().render && CF().tick);
+    if(ready){
+      // garante HUD inicial
+      CF().rollPrices && CF().rollPrices();
+      CF().rollWeather && CF().rollWeather(true);
+      CF().render();
+      ensureClock();
+      return;
+    }
+    // tenta novamente logo
+    setTimeout(waitForStateAndInit, 60);
+  }
+
+  document.addEventListener('DOMContentLoaded', ()=>{
+    bindGlobal();
+    waitForStateAndInit();
+  });
 })();
