@@ -1,0 +1,110 @@
+// Loja (Sementes, Insumos, Armazenagem/Silos, Máquinas)
+window.MarketPanel = (function(){
+  const CF=window.CF, st=CF.state;
+
+  function btn(txt, attrs){ return `<button class="btn" ${attrs||''}>${txt}</button>`; }
+  function row(label, right, btnHtml){ return `<div class="row"><label>${label}</label><div>${right||''} ${btnHtml||''}</div></div>`; }
+
+  function renderSeeds(host){
+    const wrap=document.createElement('div');
+    wrap.className='panel glass';
+    wrap.innerHTML='<h3>Comprar Sementes</h3>';
+    Object.keys(CF.crops).forEach(k=>{
+      const d=CF.crops[k];
+      const line=document.createElement('div');
+      line.className='row';
+      line.innerHTML=row(`${d.name} — semente $${d.seedCost}`, '', btn('Comprar', `data-seed="${k}"`));
+      wrap.appendChild(line);
+    });
+    wrap.addEventListener('click', (e)=>{
+      const b=e.target.closest('[data-seed]'); if(!b) return;
+      const key=b.dataset.seed, c=CF.crops[key];
+      if(st.money<c.seedCost){ alert('Dinheiro insuficiente'); return; }
+      st.money-=c.seedCost;
+      st.seedStock[key]=(st.seedStock[key]||0)+1;
+      st.ledger.push({kind:'expense',category:'Sementes',amount:c.seedCost,note:'Compra '+c.name,day:st.day,month:st.month,year:st.year});
+      CF.render(); CF.saveSlot(st.playerName);
+      alert('Comprou 1 semente de '+c.name);
+    }, {passive:true});
+    host.appendChild(wrap);
+  }
+
+  function renderChems(host){
+    const wrap=document.createElement('div');
+    wrap.className='panel glass';
+    wrap.innerHTML='<h3>Comprar Insumos</h3>';
+    wrap.innerHTML += row(`Fertilizante — $${CF.CHEM_PRICES.fert}`, '', btn('Comprar','data-buy="fert"'));
+    wrap.innerHTML += row(`Inseticida — $${CF.CHEM_PRICES.inseticida}`, '', btn('Comprar','data-buy="inseticida"'));
+    wrap.innerHTML += row(`Fungicida — $${CF.CHEM_PRICES.fungicida}`, '', btn('Comprar','data-buy="fungicida"'));
+    wrap.addEventListener('click', (e)=>{
+      const b=e.target.closest('[data-buy]'); if(!b) return;
+      const item=b.dataset.buy, price=CF.CHEM_PRICES[item];
+      if(st.money<price){ alert('Dinheiro insuficiente'); return; }
+      st.money-=price;
+      st.inventory[item]=(st.inventory[item]||0)+1;
+      st.ledger.push({kind:'expense',category:'Insumos',amount:price,note:'Compra '+item,day:st.day,month:st.month,year:st.year});
+      CF.render(); CF.saveSlot(st.playerName);
+      alert('Comprou '+item);
+    }, {passive:true});
+    host.appendChild(wrap);
+  }
+
+  // NOVO: Armazenagem (Silos) — capacidade, preço dinâmico e compra
+  function renderStorage(host){
+    const wrap=document.createElement('div');
+    wrap.className='panel glass';
+    const used = CF.capacityUsed(), max = CF.capacityMax();
+    const price = CF.siloDynamicPrice();
+    wrap.innerHTML = `
+      <h3>Armazenagem (Silos)</h3>
+      <div class="row">
+        <label>Capacidade: <b>${used}</b> / <b>${max}</b> unidades</label>
+        <div class="muted">Cada silo +${CF.SILO_CAPACITY} un</div>
+      </div>
+      ${row(`Próximo silo: $${price}`, '', btn('Comprar Silo (+10 un)', 'id="buySilo"'))}
+    `;
+    wrap.querySelector('#buySilo').addEventListener('click', ()=>{
+      const p=CF.siloDynamicPrice();
+      if(st.money<p){ alert('Dinheiro insuficiente'); return; }
+      CF.buyItem('silo'); CF.saveSlot(st.playerName);
+      // re-render seção para atualizar capacidade e preço do próximo
+      host.innerHTML=''; renderSeeds(host); renderChems(host); renderStorage(host); renderMachines(host);
+      alert('Capacidade aumentada!');
+    }, {passive:true});
+    host.appendChild(wrap);
+  }
+
+  function renderMachines(host){
+    const wrap=document.createElement('div');
+    wrap.className='panel glass';
+    wrap.innerHTML='<h3>Máquinas & Implementos</h3>';
+    const order=['tractor','plow_basic','plow_dual','planter_3','planter_6','sprayer','harvester','truck'];
+    order.forEach(k=>{
+      const name=(CF.MACHINES[k]?.name)||k;
+      const price=CF.machineDynamicPrice(k);
+      const have=st.inventory[k]>0;
+      const div=document.createElement('div'); div.className='row';
+      div.innerHTML = row(`${name} — $${price} ${have?'• <b>Você já tem</b>':''}`, '', btn('Comprar',`data-mach="${k}" ${have?'disabled':''}`));
+      wrap.appendChild(div);
+    });
+    wrap.addEventListener('click', (e)=>{
+      const b=e.target.closest('[data-mach]'); if(!b) return;
+      const key=b.dataset.mach; const price=CF.machineDynamicPrice(key);
+      if(st.inventory[key]>0){ alert('Você já possui.'); return; }
+      if(st.money<price){ alert('Dinheiro insuficiente'); return; }
+      st.money-=price; st.inventory[key]=1;
+      st.ledger.push({kind:'capex',category:'Máquinas',amount:price,note:'Compra '+(CF.MACHINES[key]?.name||key),day:st.day,month:st.month,year:st.year});
+      CF.render(); CF.saveSlot(st.playerName);
+      alert('Comprou '+(CF.MACHINES[key]?.name||key));
+    }, {passive:true});
+    host.appendChild(wrap);
+  }
+
+  function render(host){
+    renderSeeds(host);
+    renderChems(host);
+    renderStorage(host);   // <— NOVO bloco
+    renderMachines(host);
+  }
+  return { render };
+})();

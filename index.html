@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="theme-color" content="#0b1220"/>
+  <title>Cambrussi Farm — v13 (SPA)</title>
+
+  <!-- Google Fonts (Display + Texto) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <!-- Outfit para títulos + Nunito para texto -->
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;800&family=Outfit:wght@600;800&display=swap" rel="stylesheet">
+
+  <!-- Estilos -->
+  <link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+  <!-- splash, app, header, topnav, main, modais... (iguais ao seu HTML atual) -->
+  <!-- ABAIXO É O MESMO BLOCO QUE VOCÊ JÁ TEM, SEM MUDAR IDs/estrutura -->
+
+  <div id="splash" class="splash">
+    <div class="brand">Cambrussi Games Inc</div>
+    <div class="gear">⚙️ cambrussi gear</div>
+    <div class="card glass">
+      <h1>Cambrussi Farm</h1>
+      <div class="row">
+        <label>Nome do jogador</label>
+        <input id="playerName" placeholder="Seu nome"/>
+      </div>
+      <div class="row">
+        <label>Dificuldade</label>
+        <div class="options">
+          <label><input type="radio" name="diff" value="easy" checked/> Fácil</label>
+          <label><input type="radio" name="diff" value="normal"/> Normal</label>
+          <label><input type="radio" name="diff" value="hard"/> Difícil</label>
+        </div>
+      </div>
+      <div class="row">
+        <label>Velocidade do dia</label>
+        <select id="speedSel">
+          <option value="slow">Lento</option>
+          <option value="medium" selected>Médio</option>
+          <option value="fast">Rápido</option>
+        </select>
+      </div>
+      <div class="actions">
+        <button id="btnNew" class="btn primary">Novo Jogo</button>
+        <button id="btnLoad" class="btn ghost">Carregar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="app" class="hidden">
+    <header class="top glass">
+      <div class="left">
+        <b>Cambrussi Farm</b> — <span id="date"></span> — <span id="clock"></span> — <span id="weather"></span>
+      </div>
+      <div class="right">Jogador: <span id="hudName"></span> • Dinheiro: $<span id="money"></span></div>
+    </header>
+
+    <nav class="topnav glass">
+      <button class="navbtn" data-open="market"><img src="assets/ui/shop.svg" class="nav-ic" alt=""> Loja</button>
+      <button class="navbtn" data-open="warehouse"><img src="assets/ui/warehouse.svg" class="nav-ic" alt=""> Armazém</button>
+      <button class="navbtn" data-open="bank"><img src="assets/ui/bank.svg" class="nav-ic" alt=""> Banco</button>
+      <button class="navbtn" data-open="reports"><img src="assets/ui/reports.svg" class="nav-ic" alt=""> Relatórios</button>
+      <button class="navbtn ghost" id="btnSave">Salvar</button>
+      <button class="navbtn ghost" id="btnLoad2">Carregar</button>
+    </nav>
+
+    <main class="layout">
+      <section class="field-wrap">
+        <div id="fieldOverlay" class="overlay"></div>
+        <div id="hudFloat" class="glass">
+          <div class="line"><span class="dot"></span><span id="hudDateFull">—</span></div>
+          <div class="line"><span id="hudClockFull">—</span> • <span id="hudSeasonFull">—</span> • <span id="hudWeatherFull">—</span> • <span id="hudSpeedFull">—</span></div>
+        </div>
+        <div id="field" class="field"></div>
+        <div class="legend">
+          <span class="chip soil">Solo</span>
+          <span class="chip tilled">Arado</span>
+          <span class="chip wet">Molhado</span>
+          <span class="chip harvest">Colher</span>
+          <span class="chip dead">Morta</span>
+          <span class="chip need need-n">Nutriente</span>
+          <span class="chip need need-b">Inseticida</span>
+          <span class="chip need need-f">Fungicida</span>
+        </div>
+      </section>
+
+      <aside class="panel shop glass">
+        <h3>Ferramentas</h3>
+        <div class="tools">
+          <button class="tool" data-tool="hoe">🪓 Arar</button>
+          <button class="tool" data-tool="plant">🌱 Plantar</button>
+          <button class="tool" data-tool="water">💧 Regar</button>
+          <button class="tool" data-tool="treat">🧴 Tratar</button>
+          <button class="tool" data-tool="harvest">🧺 Colher</button>
+        </div>
+        <div id="plantPalette" class="palette hidden"></div>
+
+        <h3>Resumo</h3>
+        <ul class="inventory" id="invList"></ul>
+        <p class="muted">Use o <b>menu</b> para Loja, Armazém, Banco e Relatórios.</p>
+      </aside>
+    </main>
+
+    <footer class="footer glass">
+      <div id="machinesBar" class="machines-bar"></div>
+      <div id="status" class="muted" aria-live="polite"></div>
+    </footer>
+  </div>
+
+  <!-- Modais -->
+  <div id="centerModal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-card popup glass">
+      <button class="btn close-x" data-close="centerModal" aria-label="Fechar">✕</button>
+      <div class="row"><button class="btn" id="modalBack">Voltar</button><b id="modalTitle">Menu</b></div>
+      <div id="panelHost"></div>
+    </div>
+  </div>
+
+  <div id="harvestModal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-card glass">
+      <button class="btn close-x" data-close="harvestModal" aria-label="Fechar">✕</button>
+      <h3>O que fazer com a colheita?</h3>
+      <p id="harvestInfo"></p>
+      <div class="modal-actions">
+        <button id="sellNow" class="btn primary">Vender agora</button>
+        <button id="storeNow" class="btn ghost">Enviar ao armazém</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="loadModal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-card glass">
+      <button class="btn close-x" data-close="loadModal" aria-label="Fechar">✕</button>
+      <h3>Carregar jogo</h3>
+      <div id="saveList"></div>
+      <div class="modal-actions">
+        <button class="btn" data-close="loadModal">Fechar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Seus scripts JS ORIGINAIS (sem alterações) -->
+  <script src="js/constants.js"></script>
+  <script src="js/state.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/logic.js"></script>
+  <script src="js/panels/market.js"></script>
+  <script src="js/panels/warehouse.js"></script>
+  <script src="js/panels/bank.js"></script>
+  <script src="js/panels/reports.js"></script>
+  <script src="js/router.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
