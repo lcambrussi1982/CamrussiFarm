@@ -1,23 +1,25 @@
 (function(){
-  const CF=window.CF, st=CF.state, els=CF.els;
+  const CF = window.CF;
 
-  // === Ledger / utilidades ===
+  // Getter de estado (evita capturar state antes dele existir)
+  const S = ()=> window.CF.state;
+
+  // Ledger
   function addTxn(kind, category, amount, note=""){
+    const st = S(); if(!st) return;
     st.ledger.push({kind,category,amount:Math.round(amount),note,day:st.day,month:st.month,year:st.year});
-    CF.markDirty();
+    CF.markDirty && CF.markDirty();
   }
-  function hasMachine(key){ return (st.inventory[key]||0)>0; }
+  const hasMachine = (key)=> { const st=S(); return st && (st.inventory[key]||0)>0; };
 
-  // === Armazém ===
-  CF.capacityMax = function(){ return (st.inventory.silo||0) * CF.SILO_CAPACITY; };
-  CF.capacityUsed = function(){ return Object.values(st.storage).reduce((a,b)=> a + (b|0), 0); };
-  CF.siloDynamicPrice = function(){
-    const base=120; const n=(st.inventory.silo||0);
-    return Math.round(base * Math.pow(1.18, Math.max(0, n)));
-  };
+  // Armazém
+  CF.capacityMax = ()=> { const st=S(); return st ? (st.inventory.silo||0) * CF.SILO_CAPACITY : 0; };
+  CF.capacityUsed = ()=> { const st=S(); return st ? Object.values(st.storage).reduce((a,b)=> a + (b|0), 0) : 0; };
+  CF.siloDynamicPrice = ()=> { const st=S(); const n = st? (st.inventory.silo||0) : 0; const base=120; return Math.round(base * Math.pow(1.18, Math.max(0,n))); };
 
-  // === Custos por ação (aluguel vs. serviço) ===
+  // Custos por ação
   function chargeAction(kind, qty=1){
+    const st=S(); if(!st) return;
     let need=null;
     if(kind==='plow'||kind==='plant') need='tractor';
     if(kind==='harvest') need='harvester';
@@ -44,6 +46,7 @@
   }
 
   function chargeSalesTax(gross){
+    const st=S(); if(!st) return;
     const tax = Math.round(gross*CF.TAX_RATE);
     if(tax>0){
       st.money -= tax;
@@ -51,22 +54,18 @@
     }
   }
 
-  // === Piso de preço: nunca vender abaixo do custo (inclui imposto) ===
+  // Piso de preço — considera auto-compra (mais cara) para pior caso
   CF.requiredMinPrice = function(cropKey){
-    const seed = CF.seedAutoPrice(cropKey); // considera pior caso (automático)
-    const costs =
-      seed +
-      CF.ACTION_COSTS.plow.rent +
-      CF.ACTION_COSTS.plant.rent +
-      CF.ACTION_COSTS.harvest.rent +
-      CF.ACTION_COSTS.directPerUnit.rent;
-    const target = costs * 1.10 + 1; // +10% margem + 1
+    const seed = CF.seedAutoPrice(cropKey);
+    const costs = seed + CF.ACTION_COSTS.plow.rent + CF.ACTION_COSTS.plant.rent + CF.ACTION_COSTS.harvest.rent + CF.ACTION_COSTS.directPerUnit.rent;
+    const target = costs * 1.10 + 1;
     const p = target / (1 - CF.TAX_RATE);
     return Math.max( CF.sellFloor(cropKey), Math.round(p) );
   };
 
-  // === Preços do dia / clima ===
+  // Preços e clima
   CF.rollPrices=function(){
+    const st=S(); if(!st) return;
     const season=CF.currentSeason();
     const vol=CF.DIFF[st.difficulty].priceVol;
 
@@ -76,7 +75,7 @@
       const seasonFactor=inSeason? 1.10 : 0.95;
       const noise=1+(Math.random()*2-1)*vol;
       let v=Math.round(base*seasonFactor*noise);
-      v = Math.max(v, CF.requiredMinPrice(k)); // nunca abaixo do custo + margem
+      v = Math.max(v, CF.requiredMinPrice(k));
       st.prices[k]=v;
     }
 
@@ -88,6 +87,7 @@
   };
 
   CF.rollWeather=function(first=false){
+    const st=S(); if(!st) return;
     const r=Math.random();
     if(r<0.15) st.weather='storm';
     else if(r<0.40) st.weather='rain';
@@ -101,14 +101,14 @@
     if(!first) CF.flash('Clima: '+(CF.WEATHER[st.weather]||''));
   };
 
-  // === Insumos (tratamento) — compra automática usa preço com markup ===
+  // Insumos — automático usa markup
   function applyChem(affType){
+    const st=S(); if(!st) return false;
     const map={nutrient:'fert', insect:'inseticida', fungus:'fungicida'};
-    const key=map[affType];
-    if(!key) return false;
+    const key=map[affType]; if(!key) return false;
 
     if((st.inventory[key]||0)<=0){
-      const price=CF.chemAutoPrice(key); // automático (mais caro)
+      const price=CF.chemAutoPrice(key);
       if(st.money<price){ CF.flash('Sem estoque e sem dinheiro para '+key); return false; }
       st.money-=price;
       addTxn('expense','Insumos',price,'Compra automática '+key);
@@ -119,8 +119,9 @@
     return true;
   }
 
-  // === Ferramentas no campo ===
+  // Interação de campo
   CF.applyTool=function(i){
+    const st=S(); if(!st) return;
     const t=st.tiles[i]; if(!t) return;
 
     if(t.locked){
@@ -129,7 +130,9 @@
       st.money-=price;
       addTxn('capex','Terreno',price,'Aquisição de lote');
       t.locked=false; st.owned[i]=true;
-      CF.recalcCredit(); CF.render(); return;
+      CF.recalcCredit && CF.recalcCredit();
+      CF.render && CF.render();
+      return;
     }
 
     const tool=st.selectedTool;
@@ -144,7 +147,7 @@
         if(!t.tilled){ CF.flash('Arar antes de plantar.'); return; }
         const c=st.selectedCrop, def=CF.crops[c];
         if((st.seedStock[c]||0)<=0){
-          const price=CF.seedAutoPrice(c); // automático (mais caro)
+          const price=CF.seedAutoPrice(c);
           if(st.money<price){ CF.flash('Sem sementes e sem dinheiro.'); return; }
           st.money-=price;
           addTxn('expense','Sementes',price,'Compra automática de '+def.name);
@@ -176,16 +179,19 @@
         chargeAction('harvest');
         CF._lastHarvestTile=i;
         const priceNow=Math.max(st.prices[t.crop.type]||d.sell, CF.requiredMinPrice(t.crop.type));
-        document.querySelector('#harvestInfo').textContent=`${d.name} — Preço do dia: $${priceNow}`;
-        document.querySelector('#harvestModal').classList.remove('hidden');
+        const el=document.querySelector('#harvestInfo');
+        if(el) el.textContent=`${d.name} — Preço do dia: $${priceNow}`;
+        CF.openModal && CF.openModal('harvestModal');
         return;
       }
     }
-    CF.markDirty(); CF.render();
+    CF.markDirty && CF.markDirty();
+    CF.render && CF.render();
   };
 
-  // === Colheita: vender/armazenar ===
+  // Colheita → vender/armazenar
   CF.harvestSell=function(){
+    const st=S(); if(!st) return;
     const i=CF._lastHarvestTile; if(i==null) return;
     const t=st.tiles[i]; const d=CF.crops[t.crop.type];
     const priceNow=Math.max(st.prices[t.crop.type]||d.sell, CF.requiredMinPrice(t.crop.type));
@@ -195,11 +201,12 @@
     chargeSalesTax(gross);
     st.money+=Math.max(0,gross);
     t.crop=null; t.tilled=false; t.water=0;
-    document.querySelector('#harvestModal').classList.add('hidden');
-    CF.render();
+    CF.closeModal && CF.closeModal('harvestModal');
+    CF.render && CF.render();
   };
 
   CF.harvestStore=function(){
+    const st=S(); if(!st) return;
     const i=CF._lastHarvestTile; if(i==null) return;
     const t=st.tiles[i];
 
@@ -210,12 +217,12 @@
     st.storage[t.crop.type]=(st.storage[t.crop.type]||0)+1;
     chargeAction('toWarehousePerUnit',1);
     t.crop=null; t.tilled=false; t.water=0;
-    document.querySelector('#harvestModal').classList.add('hidden');
-    CF.render();
+    CF.closeModal && CF.closeModal('harvestModal');
+    CF.render && CF.render();
   };
 
-  // === Venda a partir do estoque ===
   CF.sellFromStorage=function(k,qty){
+    const st=S(); if(!st) return;
     const have=st.storage[k]|0;
     if(have<qty){ CF.flash('Estoque insuficiente.'); return; }
     const p=Math.max(st.prices[k]||CF.crops[k].sell, CF.requiredMinPrice(k));
@@ -225,11 +232,13 @@
     chargeSalesTax(gross);
     st.money+=Math.max(0,gross);
     st.storage[k]=(st.storage[k]|0)-qty;
-    CF.render();
+    CF.render && CF.render();
   };
 
-  // === Compras rápidas (usado por botões genéricos) — Loja (barato) ===
+  // Compras rápidas (Loja = barato)
   CF.buyItem=function(item){
+    const st=S(); if(!st) return;
+
     if(item==='silo'){
       const price = CF.siloDynamicPrice();
       if(st.money<price){ CF.flash('Dinheiro insuficiente.'); return; }
@@ -237,52 +246,55 @@
       st.inventory.silo = (st.inventory.silo||0) + 1;
       addTxn('capex','Silo',price,`Expansão de silo (+${CF.SILO_CAPACITY} un)`);
       CF.flash('Capacidade aumentada!');
-      CF.render();
+      CF.render && CF.render();
       return;
     }
     if(item==='fert'||item==='inseticida'||item==='fungicida'){
-      const price=CF.chemShopPrice(item); // Loja (mais barato)
+      const price=CF.chemShopPrice(item);
       if(st.money<price){ CF.flash('Dinheiro insuficiente.'); return; }
       st.money-=price;
       st.inventory[item]=(st.inventory[item]||0)+1;
       addTxn('expense','Insumos', price,'Compra em loja '+item);
-      CF.render();
+      CF.render && CF.render();
       return;
     }
   };
 
-  // === Máquinas ===
+  // Máquinas
   CF.buyMachine=function(key){
+    const st=S(); if(!st) return;
     if(st.inventory[key]>0){ CF.flash('Você já possui.'); return; }
     const price=CF.machineDynamicPrice(key);
     if(st.money<price){ CF.flash('Dinheiro insuficiente.'); return; }
     st.money-=price;
     st.inventory[key]=1;
     addTxn('capex','Máquinas',price,'Compra de '+(CF.MACHINES[key]?.name||key));
-    CF.render();
+    CF.render && CF.render();
   };
 
-  // === Banco ===
+  // Banco
   CF.bankBorrow=function(v){
+    const st=S(); if(!st) return;
     v=Math.max(0,Math.round(v|0));
     if(st.debt+v>st.creditLimit){ CF.flash('Acima do limite de crédito.'); return; }
     st.debt+=v; st.money+=v;
     addTxn('finance','Empréstimos',v,'Cambrussi Bank — crédito');
-    CF.render();
+    CF.render && CF.render();
   };
   CF.bankRepay=function(v){
+    const st=S(); if(!st) return;
     v=Math.max(0,Math.round(v|0));
     if(v>st.money) v=st.money;
     const pay=Math.min(v,st.debt);
     if(pay<=0){ CF.flash('Nada a pagar.'); return; }
     st.debt-=pay; st.money-=pay;
     addTxn('finance','Amortização',pay,'Cambrussi Bank — pagamento');
-    CF.render();
+    CF.render && CF.render();
   };
 
-  // === UI ===
-  CF.openModal=(id)=> document.getElementById(id).classList.remove('hidden');
-  CF.closeModal=(id)=> document.getElementById(id).classList.add('hidden');
+  // UI util
+  CF.openModal=(id)=> { const m=document.getElementById(id); if(m) m.classList.remove('hidden'); };
+  CF.closeModal=(id)=> { const m=document.getElementById(id); if(m) m.classList.add('hidden'); };
   CF.flash=function(msg){
     const s=document.getElementById('status'); if(!s) return;
     s.textContent=msg; setTimeout(()=>{ if(s.textContent===msg) s.textContent=''; }, 2500);
@@ -291,6 +303,7 @@
   CF.openPanel=function(panelKey){
     const host=document.getElementById('panelHost');
     const title=document.getElementById('modalTitle');
+    if(!host||!title) return;
     host.innerHTML='';
     if(panelKey==='market') { title.textContent='Loja'; window.MarketPanel.render(host); }
     else if(panelKey==='warehouse'){ title.textContent='Armazém'; window.WarehousePanel.render(host); }
@@ -300,8 +313,9 @@
   };
   CF.closePanel=function(){ CF.closeModal('centerModal'); history.replaceState(null,'','#'); };
 
-  // === Tempo ===
+  // Tick do tempo
   CF.tick=function(){
+    const st=S(); if(!st) return;
     st.minute+=10;
     if(st.minute>=60){ st.minute=0; st.hour++; }
 
@@ -338,8 +352,8 @@
 
       st.hour=6; st.day++;
       if(st.day>30){ st.day=1; st.month++; if(st.month>11){ st.month=0; st.year++; } }
-      CF.rollPrices(); CF.rollWeather(); CF.recalcCredit();
+      CF.rollPrices(); CF.rollWeather(); CF.recalcCredit && CF.recalcCredit();
     }
-    CF.render();
+    CF.render && CF.render();
   };
 })();

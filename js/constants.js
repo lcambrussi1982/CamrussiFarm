@@ -2,19 +2,22 @@ window.CF = window.CF || {};
 (function(){
   const CF = window.CF;
 
-  // Velocidade do dia (s)
+  // Velocidade do dia (s) — controla o loop do relógio
   CF.SPEEDS = { slow: 45, medium: 30, fast: 18 };
 
   // Calendário
   CF.MONTHS = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
   CF.SEASONS = ["Verão","Outono","Inverno","Primavera"];
-  window.GRID_W=12; window.GRID_H=10; window.idx=(x,y)=>y*GRID_W+x;
 
-  // === Política de preços Loja x Automático ===
-  // Loja = preço base (mais barato). Automático = base com leve acréscimo.
-  CF.AUTO_MARKUP = { seed: 0.12, chem: 0.10 }; // +12% semente / +10% insumo no automático
+  // Grade do campo (mantém compatibilidade)
+  window.GRID_W = 12;
+  window.GRID_H = 10;
+  window.idx = (x,y)=> y*GRID_W + x;
 
-  // === ECONOMIA BALANCEADA (lucro mínimo mesmo alugando) ===
+  // Loja x Automático — automático tem markup (mais caro)
+  CF.AUTO_MARKUP = { seed: 0.12, chem: 0.10 };
+
+  // Culturas (seedCost = preço de LOJA)
   CF.crops = {
     trigo:  {name:"Trigo",   seedCost:3, stages:2, sell:18, grow:1.0, season:["Primavera","Outono"], icons:["assets/icons/stage_seedling.svg","assets/icons/stage_leaf.svg","assets/icons/trigo_final.svg"]},
     milho:  {name:"Milho",   seedCost:5, stages:2, sell:26, grow:0.85, season:["Verão"],               icons:["assets/icons/stage_seedling.svg","assets/icons/stage_leaf.svg","assets/icons/milho_final.svg"]},
@@ -32,7 +35,7 @@ window.CF = window.CF || {};
   // Imposto sobre venda
   CF.TAX_RATE = 0.08;
 
-  // Custos operacionais (garantem lucro mínimo)
+  // Custos operacionais (rent = sem máquina própria / service = com máquina)
   CF.ACTION_COSTS = {
     plow:{rent:6,  service:2},
     plant:{rent:5, service:1.5},
@@ -42,7 +45,7 @@ window.CF = window.CF || {};
     spray:{rent:6, service:2}
   };
 
-  // Máquinas (preço dinâmico baseado no café)
+  // Máquinas (preço dinâmico ancorado no café)
   CF.machineMultipliers = { tractor:40, truck:60, harvester:100, sprayer:45, plow_basic:10, plow_dual:18, planter_3:20, planter_6:35 };
   CF.MACHINES = {
     tractor:{name:"Trator", price:0}, plow_basic:{name:"Arado Simples", price:0}, plow_dual:{name:"Arado Duplo", price:0},
@@ -50,7 +53,7 @@ window.CF = window.CF || {};
     sprayer:{name:"Pulverizador", price:0}, harvester:{name:"Colheitadeira", price:0}, truck:{name:"Caminhão", price:0},
   };
 
-  // Insumos (preço de LOJA; automático tem markup)
+  // Insumos (preço de LOJA)
   CF.CHEM_PRICES = { fert:3, inseticida:5, fungicida:6 };
 
   CF.AFFLICTS = ['nutrient','insect','fungus'];
@@ -60,25 +63,28 @@ window.CF = window.CF || {};
   // Piso mínimo por cultura
   CF.sellFloor = (k)=> Math.max(1, Math.round(CF.crops[k].sell*0.75));
 
-  // === Helpers de preço Loja x Automático ===
+  // Helpers de preço Loja x Automático
   CF.seedShopPrice = (k)=> CF.crops[k].seedCost;
   CF.seedAutoPrice = (k)=> Math.round(CF.seedShopPrice(k) * (1 + CF.AUTO_MARKUP.seed));
   CF.chemShopPrice = (key)=> CF.CHEM_PRICES[key];
   CF.chemAutoPrice = (key)=> Math.round(CF.chemShopPrice(key) * (1 + CF.AUTO_MARKUP.chem));
 
-  // Estação atual
-  CF.currentSeason = function(){ const m=CF.state.month; return CF.SEASONS[Math.floor(((m%12)+12)%12/3)]; };
+  // Estação atual (usa state no runtime)
+  CF.currentSeason = function(){ const s = window.CF.state; const m = s? s.month: 0; return CF.SEASONS[Math.floor(((m%12)+12)%12/3)]; };
 
   // Preço dinâmico da terra ≈ 300× preço do café do dia
   CF.landDynamicPrice = function(){
+    const s = window.CF.state || {};
     const cafeFloor = CF.sellFloor('cafe');
-    const cafeToday = (CF.state.prices && CF.state.prices['cafe']) ? CF.state.prices['cafe'] : cafeFloor;
+    const cafeToday = (s.prices && s.prices['cafe']) ? s.prices['cafe'] : cafeFloor;
     return Math.max(1, Math.round(cafeToday * 300));
   };
+
   // Preço dinâmico de máquina (ancorado no café)
   CF.machineDynamicPrice = function(key){
+    const s = window.CF.state || {};
     const cafeFloor = CF.sellFloor('cafe');
-    const cafeToday = (CF.state.prices && CF.state.prices['cafe']) ? CF.state.prices['cafe'] : cafeFloor;
+    const cafeToday = (s.prices && s.prices['cafe']) ? s.prices['cafe'] : cafeFloor;
     const mult = CF.machineMultipliers[key] || 50;
     return Math.max(1, Math.round(cafeToday * mult));
   };
